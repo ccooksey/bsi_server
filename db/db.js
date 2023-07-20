@@ -1,5 +1,5 @@
 const mongoose = require('mongoose');
-mongoose.set('debug', true);
+// mongoose.set('debug', true);
 
 const path = require('node:path');
 require('dotenv').config({ path: `./.env.${process.env.NODE_ENV}` });

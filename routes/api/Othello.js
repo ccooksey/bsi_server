@@ -1,57 +1,8 @@
 const express = require('express');
-const axios = require('axios');
 const mongoose = require('mongoose');
 const Othello = require('../../models/Othello');
 
 const router = express.Router();
-
-// jwt signing. Will want eventually:
-//      // On client:
-//      jwt.sign({
-//        person: 'some unique identifier'
-//      }, 'secret', { expiresIn: '1y' })
-//
-//      // Here:
-//      const { username } = await jwt.verify(token, SECRET)
-// or   const decodedJWT = await jwt.verify(token, SECRET)
-//      const username = decodedJWT.username
-
-// Middleware to authenticate the client token in the Authorization header.
-// We are checking in with the oauth server every time which has the advantage
-// that revocations have immediate effect. It is in theory costly to do so,
-// however in our context there is virtually no cost so we will keep doing it.
-router.use(async (req, res) => {
-
-  console.log("headers = ", JSON.stringify(req.headers));
-  const authorization = req.headers.authorization;
-  console.log("authorization = ", authorization);
-  if (authorization == null) {
-    console.log("Bailing");
-    return res.status(401).json({ othelloDatabaseError: 'noToken' });
-  }
-
-  const ou_oauth2 = `${process.env.OU_OAUTH2_SERVER_URL}:${process.env.OU_OAUTH2_SERVER_PORT}`;
-
-  const token = authorization.substring(authorization.indexOf(" ") + 1);
-  console.log("Authorization middleware: token = " + token);
-
-  axios.post(`${ou_oauth2}/auth/token/introspect`, {
-    'client_id': 'bsi',
-    'grant_type': 'password',
-    'token': token,
-    'client_secret': `${process.env.BSI_SERVER_OU_OAUTH2_SERVER_SHARED_SECRET}`,
-  })
-  .then((res) => {
-    console.log("Authorization middleware: success", res.data);
-    req.username = res.data.response.username;
-    return req.next();
-  })
-  .catch((err) => {
-    // This is reached with 401 error if token is not valid
-    console.log("Authorization middleware: failed", err);
-    res.status(401).json({ othelloDatabaseError: 'unauthorized' })
-  });
-})
 
 // @route GET /api/games/othello/test
 // @description tests Othello route
@@ -71,7 +22,6 @@ router.get('/', (req, res) => {
 // @description Get single Othello game by id
 // @access Public
 router.get('/:id', (req, res) => {
-  console.log("/:id Header Authorization = " + req.header('Authorization'));
   Othello.findById(new mongoose.Types.ObjectId(req.params.id))
     .then(othelloGame => res.json(othelloGame))
     .catch(err => res.status(404).json({ othelloDatabaseError: 'noSuchGame' }));
@@ -99,7 +49,7 @@ router.post('/:id/move', (req, res) => {
       if (updateResult.modifiedCount === 1) {
         res.status(200).json(game);
       } else {
-        res.status(500).json({ othelloDatabaseError: 'gameServerError' });
+        res.status(500).json({ othelloDatabaseError: 'gameUpdateError' });
       }
     })
     .catch((err) => {
@@ -118,7 +68,7 @@ router.post('/:id/move', (req, res) => {
 router.post('/', (req, res) => {
   Othello.create(req.body)
     .then(othelloGame => res.json({ msg: 'Othello game added successfully' }))
-    .catch(err => res.status(400).json({ error: 'Unable to add Othello game' }));
+    .catch(err => res.status(400).json({ othelloDatabaseError: 'unableToCreateGame' }));
 });
 
 // @route DELETE /api/games/othello/:id
@@ -126,13 +76,9 @@ router.post('/', (req, res) => {
 // @access Public
 router.delete('/:id', (req, res) => {
   Othello.findByIdAndRemove(req.params.id, req.body)
-    .then(othelloGame => res.json({ mgs: 'Othello game deleted successfully' }))
-    .catch(err => res.status(404).json({ error: 'No such Othello game' }));
+    .then(othelloGame => res.json({ msg: 'Othello game deleted successfully' }))
+    .catch(err => res.status(404).json({ othelloDatabaseError: 'noSuchGame' }));
 });
-
-
-
-
 
 // New file? Doesn't implement a route, does not need the db
 
@@ -162,56 +108,156 @@ function applyMove(game, username, x, y) {
 
   var promise = new Promise( (resolve, reject) => {
 
-    // Note that username was recovered / validated using the authorization server
-    // via the authorization token. We must not rely on an unauthenticated value
-    // provided by the client
-    const usercolor = game?.players[0] === username ? game?.colors[0] : game?.colors[1];
-    const oppocolor = game?.players[0] === username ? game?.colors[1] : game?.colors[0];
-
-    console.log("Processing move y: " + y + " x: " + x + " = " + game.gameState[y][x] + " made by user " + username);
-
-    if (username !== game.next) {
-      reject(new Error('othelloNotYourTurn'));
-    }
-  
-    if (game.gameState[y][x] !== 'E') {
-      reject(new Error('othelloCellNotEmpty'));
+    if (game == null) {
+      reject(new Error('databaseError'));
     }
 
-    let validMove = false;
-    let oppocolorCount = 0;
-    let i;
-    let j;
-    for (i = -1; i <= 1; i++) {
-      console.log("i = " + i);
-      let ty = y + i;
-      for (j = -1; j <= 1; j++) {
-        console.log("j = " + j);
-        let tx = x + j;
-        if ((j !== 0 || i !== 0) && ty >= 0 && ty <= 7 && tx >= 0 && tx <= 7) {
-          console.log("y: " + ty + " x: " + tx + " = " + game.gameState[ty][tx]);
-          if (game.gameState[ty][tx] === oppocolor) {
-            oppocolorCount++;
-            console.log("This cell contains a " + oppocolor + " -now looking for " + usercolor + " somewhere beyond that." );
-            // let's see if we can find our color again in this direction.
-            // If we do, this move will be accepted and we will do the actual
-            // flips while we are here
-            let checkNext = true;
-            let foundUsercolor = false;
-            let sy = y;
-            let sx = x;
-            while (checkNext && !foundUsercolor) {
-              sy = sy + i;
-              sx = sx + j;
-              if (sy < 0 || sy > 7 || sx < 0 || sx > 7 || game.gameState[sy][sx] === 'E') {
-                checkNext = false;
-              } else {
-                console.log("Next cell y: " + sy + " x: " + sx + " contains a " + game.gameState[sy][sx] );
-                foundUsercolor = game.gameState[sy][sx] === usercolor;
-                if (foundUsercolor) {
-                  validMove = true;
-                  console.log("Setting clicked cell y: " + y + " x: " + x + " to " + usercolor);
-                  game.gameState[y][x] = usercolor;
+    // Note that username is recovered / validated using the authorization server
+    // via the authorization token. We do not rely on an unauthenticated value
+    // provided by the client. From username we can derive other values of interest.
+    const usercolor = game.players[0] === username ? game.colors[0] : game.colors[1];
+    const opponame = game.players[0] === username ? game.players[1] : game.players[0];
+    const oppocolor = game.players[0] === username ? game.colors[1] : game.colors[0];
+
+    console.log("Processing move x: " + x + " y: " + y + " = " + game.gameState[y][x] + " made by user " + username);
+
+    const result = legalMove(game, username, usercolor, x, y, true);
+    if (result !== '') {
+      reject(new Error(result));
+    }
+
+    // Let's make history!
+    const event = {
+      'player': username,
+      'color': usercolor,
+      'x': x,
+      'y': y
+    };
+    game.history = [...game.history, event];
+
+    // Check if either player has a legal next move
+    const usercanmove = legalMoveExists(game, username, usercolor);
+    const oppocanmove = legalMoveExists(game, opponame, oppocolor);
+
+    // Switch to the other player if they have a legal move available
+    if (oppocanmove) {
+      game.next = opponame;
+    }
+
+    // If noone has a legal next move, determine the winner
+    if (!usercanmove && !oppocanmove) {
+      game.winner = getWinner(game);
+      game.next = '';
+    }
+
+    // Support test playing against oneself. We just swap the
+    // token colors (unless the game has already been won, or
+    // the opponent can't move).
+    if (username === opponame) {
+      if (game.next != '' ) {
+        if (oppocanmove) {
+          const temp = game.colors[1];
+          game.colors[1] = game.colors[0];
+          game.colors[0] = temp;
+        }
+      }
+    }
+
+    console.log("Othello.js: applyMove: Move accepted.");
+    resolve(game);
+  });
+
+  return promise;
+}
+
+function getWinner(game) {
+  let i;
+  let j;
+  let blackCount = 0;
+  let whiteCount = 0;
+  for (i = 0; i < 8; i++) {
+    for (j = 0; j < 8; j++) {
+      if (game.gameState[j][i] == 'B') {
+        blackCount++;
+      } else if (game.gameState[j][i] == 'W') {
+        whiteCount++;
+      }
+    }
+  }
+  if (blackCount > whiteCount) {
+    return game.colors[0] === 'B' ? game.players[0] : game.players[1];
+  }
+  if (whiteCount > blackCount) {
+    return game.colors[0] === 'W' ? game.players[0] : game.players[1];
+  }
+  if (blackCount === whiteCount) {
+    return 'tie';
+  }
+  // Can't be reached
+  return '';
+}
+
+function legalMoveExists(game, user, color) {
+  let i;
+  let j;
+  for (i = 0; i < 8; i++) {
+    for (j = 0; j < 8; j++) {
+      if (legalMove(game, user, color, i, j, false) == '') {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+function legalMove(game, user, color, x, y, apply) {
+
+  const oppocolor = color === 'B' ? 'W' : 'B';
+
+  if (game.gameState[y][x] !== 'E') {
+    return 'othelloCellNotEmpty';
+  }
+
+  if (apply && user !== game.next) {
+    return 'othelloNotYourTurn';
+  }
+
+  let validMove = false;
+  let oppocolorCount = 0;
+  let i;
+  let j;
+  for (i = -1; i <= 1; i++) {
+    console.log("i = " + i);
+    let ty = y + i;
+    for (j = -1; j <= 1; j++) {
+      console.log("j = " + j);
+      let tx = x + j;
+      if ((j !== 0 || i !== 0) && ty >= 0 && ty <= 7 && tx >= 0 && tx <= 7) {
+        console.log("y: " + ty + " x: " + tx + " = " + game.gameState[ty][tx]);
+        if (game.gameState[ty][tx] === oppocolor) {
+          oppocolorCount++;
+          console.log("This cell contains a " + oppocolor + " -now looking for " + color + " somewhere beyond that." );
+          // let's see if we can find our color again in this direction.
+          // If we do, this move will be accepted and we will do the actual
+          // flips while we are here
+          let checkNext = true;
+          let foundUsercolor = false;
+          let sy = y;
+          let sx = x;
+          while (checkNext && !foundUsercolor) {
+            sy = sy + i;
+            sx = sx + j;
+            if (sy < 0 || sy > 7 || sx < 0 || sx > 7 || game.gameState[sy][sx] === 'E') {
+              checkNext = false;
+            } else {
+              console.log("Next cell y: " + sy + " x: " + sx + " contains a " + game.gameState[sy][sx] );
+              foundUsercolor = game.gameState[sy][sx] === color;
+              if (foundUsercolor) {
+                validMove = true;
+
+                if (apply) {
+                  console.log("Setting clicked cell y: " + y + " x: " + x + " to " + color);
+                  game.gameState[y][x] = color;
                   // We found our color, flip all tokens in between
                   foundUsercolor = false;
                   let sy = y;
@@ -219,40 +265,33 @@ function applyMove(game, username, x, y) {
                   while (!foundUsercolor) {
                     sy = sy + i;
                     sx = sx + j;
-                    foundUsercolor = game.gameState[sy][sx] === usercolor;
+                    foundUsercolor = game.gameState[sy][sx] === color;
                     if (!foundUsercolor) {
-                      console.log("Setting intermediate cell y: " + sy + " x: " + sx + " to " + usercolor);
-                      game.gameState[sy][sx] = usercolor;
+                      console.log("Setting intermediate cell y: " + sy + " x: " + sx + " to " + color);
+                      game.gameState[sy][sx] = color;
                     }
                   }
                 }
+
               }
             }
           }
         }
       }
     }
+  }
 
-    if (oppocolorCount === 0) {
-      reject(new Error('othelloOpponentCellNotAdjacent'));
-    }
+  if (oppocolorCount === 0) {
+    return 'othelloOpponentCellNotAdjacent';
+  }
 
-    if (!validMove) {
-      reject(new Error('othelloTerminatingCellNotPresent'));
-    }
+  if (!validMove) {
+    return 'othelloTerminatingCellNotPresent';
+  }
 
-// Hack for testing. Switching sides
-const temp = game.colors[0];
-game.colors[0] = game.colors[1];
-game.colors[1] = temp;
-
-  console.log("Othello.js: applyMove: Move accepted.");
-  resolve(game);
-  });
-
-  return promise;
+  // Empty string indicates the move was legal (and applied if requested).
+  return '';
 }
-
 
 
 module.exports = router;

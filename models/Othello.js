@@ -1,24 +1,5 @@
 const mongoose = require('mongoose');
-mongoose.set('debug', true);
-
-// db.othello.insertOne({
-//   created: new Date(),
-//   players: ['hclinton', 'ccooksey'],
-//   colors: ['white', 'black'],
-//   gameState: [
-//     ['E', 'E', 'E', 'E', 'E', 'E', 'E', 'E',],
-//     ['E', 'E', 'E', 'E', 'E', 'E', 'E', 'E',],
-//     ['E', 'E', 'E', 'E', 'E', 'E', 'E', 'E',],
-//     ['E', 'E', 'E', 'W', 'B', 'E', 'E', 'E',],
-//     ['E', 'E', 'E', 'B', 'W', 'E', 'E', 'E',],
-//     ['E', 'E', 'E', 'E', 'E', 'E', 'E', 'E',],
-//     ['E', 'E', 'E', 'E', 'E', 'E', 'E', 'E',],
-//     ['E', 'E', 'E', 'E', 'E', 'E', 'E', 'E',],
-//   ],
-//   next: 'ccooksey',
-//   winner: '',
-//   gameHistory: [],
-// })
+// mongoose.set('debug', true);
 
 // const OthelloCellSchema = new mongoose.Schema({
 //   cell: { type: String, enum: ['B', 'W', 'E'], default: 'E' }
@@ -55,7 +36,7 @@ const OthelloSchema = new mongoose.Schema({
     validate: v => Array.isArray(v) && v.length == 8 },
   next: { type: String, default: '', required: true },
   winner: { type: String },
-  gameHistory: {
+  history: {
     type: [OthelloEventSchema],
   },
 }, { collection: 'othello' });
