@@ -144,7 +144,7 @@ function applyMove(game, username, x, y) {
       game.next = opponame;
     }
 
-    // If noone has a legal next move, determine the winner
+    // If no one has a legal next move, determine the winner
     if (!usercanmove && !oppocanmove) {
       game.winner = getWinner(game);
       game.next = '';
