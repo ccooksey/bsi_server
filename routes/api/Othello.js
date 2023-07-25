@@ -1,5 +1,6 @@
 const express = require('express');
 const mongoose = require('mongoose');
+const { sendMessageToUser, typesDef } = require('../../WebSocketServer.js');
 const Othello = require('../../models/Othello');
 
 const router = express.Router();
@@ -162,6 +163,9 @@ function applyMove(game, username, x, y) {
         }
       }
     }
+
+    // Lastly -ping the opposing player that a move ha been made
+    sendMessageToUser(opponame, {type: typesDef.GAME_UPDATE });
 
     console.log("Othello.js: applyMove: Move accepted.");
     resolve(game);

@@ -3,7 +3,7 @@ My second React server!
 This is an Othello game server. It stores games in MongoDB, and uses expressjs to fetch
 and update them as needed. It requires the ou-oauth2 server running in the same environment.
 
-It keeps a roster of BSI players (seperate from the outh server). It allows the creation
+It keeps a roster of BSI players (separate from the ou-oauth server). It allows the creation
 and playing of games. It validates and applies moves and detects winners and ties.
 
 You will need MongoDB running on the same machine. Set the port numbers and

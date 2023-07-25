@@ -13,7 +13,7 @@ router.get('/', (req, res) => {
   Roster.find({visible: true})
   .then(roster => {
     res.json(roster);
-    console.log('Roster.js:get success roster = ' + JSON.stringify(roster));
+    console.log('Roster.js:get: success');
   })
   .catch(err => {
     console.log('Roster.js:get failure err = noRoster');

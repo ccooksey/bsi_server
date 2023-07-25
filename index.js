@@ -1,10 +1,14 @@
 const fs = require('fs');
+const http = require('http');
 const https = require('https');
+const { WebSocket, WebSocketServer } = require('ws');
+const uuid = require('uuid');
 const dotenv = require('dotenv');
 const express = require('express');
 const cors = require('cors');
 const connectDB = require('./db/db');
-const Authenticate = require('./Authenticate');
+const { authenticate } = require('./Authenticate');
+const { startWebSocketServer } = require('./WebSocketServer.js');
 const Roster = require('./routes/api/Roster');
 const Othello = require('./routes/api/Othello');
 
@@ -28,7 +32,7 @@ app.use(cors(corsOptions));
 
 app.use(express.json({ extended: false }));
 
-app.use(Authenticate);
+app.use(authenticate);
 
 app.use('/api/roster', Roster);
 app.use('/api/games/othello', Othello);
@@ -38,8 +42,10 @@ function Development() {
 }
 
 // Let's listen!
+let server;
 if (Development()) {
-    app.listen(process.env.BSI_SERVER_PORT_HTTP, () => {
+    server = http.createServer(app);
+    server.listen(process.env.BSI_SERVER_PORT_HTTP, () => {
         console.log(`HTTP server listening on port ${process.env.BSI_SERVER_PORT_HTTP}`)
     });
 } else {
@@ -47,11 +53,14 @@ if (Development()) {
         key: fs.readFileSync(process.env.BSI_SERVER_PRIVATE_KEY_PATH),
         cert: fs.readFileSync(process.env.BSI_SERVER_FULL_CHAIN_PATH)
     }
-    https.createServer(options, app).listen(process.env.BSI_SERVER_PORT_HTTP, () => {
+    server = https.createServer(options, app);
+    server.listen(process.env.BSI_SERVER_PORT_HTTP, () => {
         console.log(`HTTPS server listening on port ${process.env.BSI_SERVER_PORT_HTTP}`)
     });
 }
 
+// Start up the websocket server
+startWebSocketServer(server);
 
 // // Cookies -note that the following routes send and receive cookies.
 // // We probably won't need any of this.

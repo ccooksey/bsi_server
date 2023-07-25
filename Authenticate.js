@@ -19,7 +19,7 @@ const router = express.Router();
 // We are checking in with the oauth server every time which has the advantage
 // that revocations have immediate effect. It is in theory costly to do so,
 // however in our context there is virtually no cost so we will keep doing it.
-async function authenticate(req, res, next) {
+function authenticate(req, res, next) {
 
   const authorization = req?.headers?.authorization;
   if (authorization == null) {
@@ -47,4 +47,29 @@ async function authenticate(req, res, next) {
   });
 }
 
-module.exports = authenticate;
+// A slightly different approach to authorization. Used by custom authorization
+// tokens received over the websocket.
+function authenticateWS(authorizationToken, cb) {
+
+  const token = authorizationToken.substring(authorizationToken.indexOf(" ") + 1);
+  const ou_oauth2 = `${process.env.OU_OAUTH2_SERVER_URL}:${process.env.OU_OAUTH2_SERVER_PORT}`;
+  axios.post(`${ou_oauth2}/auth/token/introspect`, {
+      'client_id': 'bsi',
+      'grant_type': 'password',
+      'token': token,
+      'client_secret': `${process.env.BSI_SERVER_OU_OAUTH2_SERVER_SHARED_SECRET}`,
+  })
+  .then((ores) => {
+      const username = ores?.data?.response?.username;
+      cb(true, username);
+  })
+  .catch((err) => {
+      cb(false);
+  });
+}
+
+module.exports = {
+  authenticate,
+  authenticateWS
+};
+
