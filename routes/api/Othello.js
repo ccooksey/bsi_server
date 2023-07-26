@@ -1,5 +1,6 @@
 const express = require('express');
 const mongoose = require('mongoose');
+const sanitize = require('mongo-sanitize');
 const { sendMessageToUser, typesDef } = require('../../WebSocketServer.js');
 const Othello = require('../../models/Othello');
 
@@ -67,8 +68,45 @@ router.post('/:id/move', (req, res) => {
 // @description Create an Othello game
 // @access Public
 router.post('/', (req, res) => {
-  Othello.create(req.body)
-    .then(othelloGame => res.json({ msg: 'Othello game added successfully' }))
+
+  // req.body = {
+  //   opponent: opponent,
+  //   usercolor: 'B'
+  // };
+
+  const username = req.username;
+  const opponent = sanitize(req.body.opponent); // Trying to sanitize this in the client is pointless.
+  const usercolor = req.body.usercolor == 'B' || req.body.usercolor == 'W' ? req.body.usercolor : 'B';
+  const oppocolor = req.body.usercolor == 'B' ? 'W' : 'B';
+  const next = usercolor === 'B' ? username : opponent;
+
+  const game = {
+    created: new Date(),
+    players: [username, opponent],
+    colors: [usercolor, oppocolor],
+    gameState: [
+      ['E', 'E', 'E', 'E', 'E', 'E', 'E', 'E',],
+      ['E', 'E', 'E', 'E', 'E', 'E', 'E', 'E',],
+      ['E', 'E', 'E', 'E', 'E', 'E', 'E', 'E',],
+      ['E', 'E', 'E', 'W', 'B', 'E', 'E', 'E',],
+      ['E', 'E', 'E', 'B', 'W', 'E', 'E', 'E',],
+      ['E', 'E', 'E', 'E', 'E', 'E', 'E', 'E',],
+      ['E', 'E', 'E', 'E', 'E', 'E', 'E', 'E',],
+      ['E', 'E', 'E', 'E', 'E', 'E', 'E', 'E',],
+    ],
+    next: next,
+    winner: '',
+    history: [],
+  };
+
+  Othello.create(game)
+    .then((othelloGame) => {
+      console.log("newGame = " + othelloGame);
+      res.json({
+        msg: 'Othello game added successfully',
+        id: othelloGame._id
+      })
+    })
     .catch(err => res.status(400).json({ othelloDatabaseError: 'unableToCreateGame' }));
 });
 
