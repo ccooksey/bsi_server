@@ -1,15 +1,16 @@
-My second React server!
+A React based Othello game server.
 
-This is an Othello game server. It stores games in MongoDB, and exposes expressjs APIs to fetch
-and update them as needed. It requires the ou-oauth server running in the same environment (although
+Stores games in MongoDB, and exposes expressjs APIs to fetch and update the games
+as needed. It requires the ou-oauth server running in the same environment (although
 it could be elsewhere if the appropriate CORS permissions are granted).
 
 It keeps a roster of BSI players (separate from the ou-oauth server). It allows the creation
-and playing of games. It validates and applies moves and detects winners and ties.
+and playing of games. It validates and applies moves and detects winners and ties. It also keeps
+the move history of individual games.
 
 You will need MongoDB running on the same machine. Set the port numbers and
-credentials in .env.development or .env.production that you create. Follow the pattern from the .env
-file.
+credentials in .env.development or .env.production that you create. Follow the pattern from
+the .env file.
 
 The code can be dragged to a server somewhere and started with either
 
