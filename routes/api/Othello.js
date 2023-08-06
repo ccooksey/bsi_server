@@ -12,10 +12,12 @@ const router = express.Router();
 router.get('/test', (req, res) => res.send('Othello route testing!'));
 
 // @route GET /api/games/othello
-// @description Get all Othello games
+// @description Get all Othello games associated with the current player
 // @access Public
 router.get('/', (req, res) => {
-  Othello.find(req.query)
+  // Add the username to the query
+  const query = {...req.query, players: req.username};
+  Othello.find(query)
     .then(othelloGames => res.json(othelloGames))
     .catch(err => res.status(404).json({ othelloDatabaseError: 'noGames' }));   
 });
@@ -42,7 +44,7 @@ router.post('/:id/move', (req, res) => {
   id = new mongoose.Types.ObjectId(req.params.id);
   let game;
   Othello.findById(id)
-    .then(othelloGameBefore => applyMove(othelloGameBefore, req.username, req.body.bx, req.body.by))
+    .then(othelloGameBefore => applyMove(othelloGameBefore, req.username, req.body.x, req.body.y))
     .then(othelloGameAfter => {
       game = othelloGameAfter;
       return Othello.updateOne({_id: id}, {'$set': othelloGameAfter});
@@ -203,7 +205,7 @@ function applyMove(game, username, x, y) {
     }
 
     // Lastly -ping the opposing player that a move ha been made
-    sendMessageToUser(opponame, {type: typesDef.GAME_UPDATE });
+    sendMessageToUser(opponame, {type: typesDef.GAME_UPDATE});
 
     console.log("Othello.js: applyMove: Move accepted.");
     resolve(game);

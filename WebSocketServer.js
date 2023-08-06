@@ -4,7 +4,9 @@ const { authenticateWS } = require('./Authenticate');
 
 const typesDef = {
     AUTHORIZATION: 'authorization',
-    GAME_UPDATE: 'gameUpdated'
+    GAME_UPDATE: 'gameUpdated',
+    PLAYER_ONLINE: 'playerOnline',
+    PLAYER_OFFLINE: 'playerOffline'
 }
 
 const clients = {};
@@ -122,12 +124,9 @@ function stopPinging() {
 
 // Send a message to a client by websocket
 function sendMessage(ws, messageObject) {
-    console.log('sendMessage: ws = ' + ws);
-    console.log('sendMessage: ws.readyState = ' + ws.readyState);
-    console.log('sendMessage: WebSocket.OPEN = ' + WebSocket.OPEN);
     const messageJSON = JSON.stringify(messageObject);
     if(ws.readyState === WebSocket.OPEN) {
-        console.log('sendMessage: Sending a message to the client: ' + messageJSON);
+        console.log('WebSocketServer.js: sendMessage: Sending a message to the client: ' + messageJSON);
         ws.send(messageJSON);
     }
 }
@@ -152,6 +151,7 @@ function sendMessageToUser(username, messageObject) {
 // Send the same message to all clients
 function broadcastMessage(messageObject) {
     const messageJSON = JSON.stringify(messageObject);
+    console.log('WebSocketServer.js: broadcastMessage: Sending a message to everyone: ' + messageJSON);
     for(let userId in clients) {
         let ws = clients[userId];
         if(ws.readyState === WebSocket.OPEN) {
@@ -163,5 +163,6 @@ function broadcastMessage(messageObject) {
 module.exports = {
     typesDef,
     startWebSocketServer,
-    sendMessageToUser
+    sendMessageToUser,
+    broadcastMessage
 };
