@@ -151,6 +151,7 @@ function applyMove(game, username, x, y) {
 
     if (game == null) {
       reject(new Error('databaseError'));
+      return;
     }
 
     // Note that username is recovered / validated using the authorization server
@@ -165,6 +166,7 @@ function applyMove(game, username, x, y) {
     const result = legalMove(game, username, usercolor, x, y, true);
     if (result !== '') {
       reject(new Error(result));
+      return;
     }
 
     // Let's make history!
@@ -204,7 +206,7 @@ function applyMove(game, username, x, y) {
       }
     }
 
-    // Lastly -ping the opposing player that a move ha been made
+    // Ping the opposing player that a move has been made
     sendMessageToUser(opponame, {type: typesDef.GAME_UPDATE});
 
     console.log("Othello.js: applyMove: Move accepted.");
@@ -258,12 +260,12 @@ function legalMove(game, user, color, x, y, apply) {
 
   const oppocolor = color === 'B' ? 'W' : 'B';
 
-  if (game.gameState[y][x] !== 'E') {
-    return 'othelloCellNotEmpty';
-  }
-
   if (apply && user !== game.next) {
     return 'othelloNotYourTurn';
+  }
+
+  if (game.gameState[y][x] !== 'E') {
+    return 'othelloCellNotEmpty';
   }
 
   let validMove = false;
