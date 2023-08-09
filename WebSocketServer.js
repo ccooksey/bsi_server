@@ -1,13 +1,11 @@
+//-----------------------------------------------------------------------------
+// Copyright 2023 Chris Cooksey
+//-----------------------------------------------------------------------------
+
 const { WebSocket, WebSocketServer } = require('ws');
 const uuid = require('uuid');
 const { authenticateWS } = require('./Authenticate');
-
-const typesDef = {
-    AUTHORIZATION: 'authorization',
-    GAME_UPDATE: 'gameUpdated',
-    PLAYER_ONLINE: 'playerOnline',
-    PLAYER_OFFLINE: 'playerOffline'
-}
+const { wsMsgTypes } = require('./bsi_protocol');
 
 const clients = {};
 let interval;
@@ -21,8 +19,8 @@ function startWebSocketServer(htmlServer) {
         const userId = uuid.v4();
         clients[userId] = wsClient;
     
-        console.log(`Received a new connection. ${userId}`);
-        console.log('There are currently ' + Object.keys(clients).length + ' active connections.');
+        console.log(`WebSocketServer.js:handleDisconnect: Received a new connection. ${userId}`);
+        console.log('WebSocketServer.js:handleDisconnect: There are currently ' + Object.keys(clients).length + ' active connections.');
 
         // Is this a problem? The only way this could be reliable is if
         // the ping function does not exceute at any point in time between
@@ -44,14 +42,14 @@ function startWebSocketServer(htmlServer) {
     
         wsClient.on('message', (message) => handleMessage(wsClient, message, userId));
 
-        wsClient.on('close', () => handleDisconnect(userId));
+        wsClient.on('close', () => handleDisconnect(wsClient, userId));
 
     });
 }
 
 function handleMessage(ws, messageJSON, userId) {
 
-    console.log(`${userId} received message. ${messageJSON}`);
+    console.log(`WebSocketServer.js:handleMessage: ${userId} received message. ${messageJSON}`);
 
     // e.g.
     // const messageJSON = {
@@ -67,18 +65,17 @@ function handleMessage(ws, messageJSON, userId) {
     // for the oauth server. We will just disallow all traffic until
     // an inbound token is authorized. We also snag the username so
     // that we know who the websocket client belongs to.
-    console.log('Authenticate.js:handleMessage');
-    if (messageObject.type === typesDef.AUTHORIZATION) {
-        console.log('Authenticate.js:handleMessage:AUTHORIZATION');
+    if (messageObject.type === wsMsgTypes.AUTHORIZATION) {
+        console.log('WebSocketServer.js:handleMessage:AUTHORIZATION');
         authenticateWS(messageObject.token, (valid, username) => {
-            console.log('Authenticate.js:handleMessage:AUTHORIZATION:valid = ' + valid);
+            console.log('WebSocketServer.js:handleMessage:AUTHORIZATION:valid = ' + valid);
             ws.authorized = valid;
             ws.username = username;
             replyObject = {
-                type: typesDef.AUTHORIZATION,
+                type: wsMsgTypes.AUTHORIZATION,
                 authorized: valid
             };
-            console.log('Authenticate.js:handleMessage: sending: ' + JSON.stringify(replyObject));
+            console.log('WebSocketServer.js:handleMessage: sending: ' + JSON.stringify(replyObject));
             sendMessage(ws, replyObject);
         });
     }
@@ -90,13 +87,21 @@ function handleMessage(ws, messageJSON, userId) {
     }
 }
 
-function handleDisconnect(userId) {
-    console.log(`${userId} disconnected.`);
-    delete clients[userId]; // This is fetching the ws value associated with the userId key
-    const json = {'a': 'b'};
-    broadcastMessage(json);
+function handleDisconnect(ws, userId) {
+    console.log(`WebSocketServer.js:handleDisconnect: ${ws.username} disconnected.`);
+
+    // Update presence -let everyone else know that the user has gone offline
+    broadcastMessage({
+        type: wsMsgTypes.PLAYER_OFFLINE,
+        player: ws.username
+      });
+
+    // Delete the ws value associated with the userId key
+    delete clients[userId];
+
     // Stop pinging if there are no more websocket connections
     if (Object.keys(clients).length === 0) {
+        console.log('WebSocketServer.js:handleDisconnect: Cancelling heartbeat timer.');
         stopPinging();
     }
 }
@@ -126,7 +131,7 @@ function stopPinging() {
 function sendMessage(ws, messageObject) {
     const messageJSON = JSON.stringify(messageObject);
     if(ws.readyState === WebSocket.OPEN) {
-        console.log('WebSocketServer.js: sendMessage: Sending a message to the client: ' + messageJSON);
+        console.log('WebSocketServer.js:sendMessage: Sending a message to the client: ' + messageJSON);
         ws.send(messageJSON);
     }
 }
@@ -134,16 +139,14 @@ function sendMessage(ws, messageObject) {
 // Send a message to a client by username. This is needed by the Othello route handler
 // to tell a user that their opponent has moved.
 function sendMessageToUser(username, messageObject) {
-    console.log('WebSocketServer: sendMessageToUser: searching for user: ' + username);
+    console.log('WebSocketServer:sendMessageToUser: searching for user: ' + username);
     const messageJSON = JSON.stringify(messageObject);
     for (let userId in clients) {
         let ws = clients[userId];
-        console.log('WebSocketServer: sendMessageToUser: this webSocketClient belongs to: ' + ws.username);
         if (ws.readyState === WebSocket.OPEN &&
             ws.username === username) {
-            console.log('sendMessageToUser: Sending a message: ' + messageJSON + ' to user: ' + username);
+            console.log('WebSocketServer:sendMessageToUser: Sending a message: ' + messageJSON + ' to user: ' + username);
             ws.send(messageJSON);
-            return;
         }
     };
 }
@@ -160,9 +163,28 @@ function broadcastMessage(messageObject) {
     };
 }
 
+// Send a list of online clients to the specified user (the user
+// has just come online and needs to know who else is present).
+function updatePresenceForUser(username) {
+    console.log('WebSocketServer.js: sendPresenceToUser: Sending presence updates to ' + username);
+    for(let userId in clients) {
+        let ws = clients[userId];
+        if (ws.readyState === WebSocket.OPEN &&
+            ws.username !== username) {
+            messageObject = {
+                type: wsMsgTypes.PLAYER_ONLINE,
+                player: ws.username
+            };
+            console.log('sendMessageToUser: Sending presence message: ' + JSON.stringify(messageObject) + ' to user: ' + username);
+            sendMessageToUser(username, messageObject);
+        }
+    };
+
+}
+
 module.exports = {
-    typesDef,
     startWebSocketServer,
     sendMessageToUser,
-    broadcastMessage
+    broadcastMessage,
+    updatePresenceForUser
 };

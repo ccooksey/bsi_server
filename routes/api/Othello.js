@@ -1,7 +1,12 @@
+//-----------------------------------------------------------------------------
+// Copyright 2023 Chris Cooksey
+//-----------------------------------------------------------------------------
+
 const express = require('express');
 const mongoose = require('mongoose');
 const sanitize = require('mongo-sanitize');
-const { sendMessageToUser, typesDef } = require('../../WebSocketServer.js');
+const { sendMessageToUser } = require('../../WebSocketServer');
+const { wsMsgTypes } = require('../../bsi_protocol');
 const Othello = require('../../models/Othello');
 
 const router = express.Router();
@@ -35,35 +40,40 @@ router.get('/:id', (req, res) => {
 // @description Apply a single move to an Othello game. This is more complicated than
 // just fetching or setting data. We must validate the move, update the database,
 // look for a winning game, switch to a new player if needed, and notify the opponent
-// that a move has been made. There are lots and lots of ways this
-// can fail. We will return 404 for server / database / react problems and 400 for
-// invalid moves. In the latter case, the message will be a token indicating what,
-// specifically, was invalid about the move.
+// that a move has been made. There are lots and lots of ways this can fail. We will
+// return 404 for server / database / react problems and 400 for invalid moves. In
+// the latter case, the message will be a token indicating what, specifically, was
+// invalid about the move.
 // @access Public
 router.post('/:id/move', (req, res) => {
   id = new mongoose.Types.ObjectId(req.params.id);
   let game;
   Othello.findById(id)
-    .then(othelloGameBefore => applyMove(othelloGameBefore, req.username, req.body.x, req.body.y))
-    .then(othelloGameAfter => {
-      game = othelloGameAfter;
-      return Othello.updateOne({_id: id}, {'$set': othelloGameAfter});
-    })
-    .then((updateResult) => {
-      if (updateResult.modifiedCount === 1) {
-        res.status(200).json(game);
-      } else {
-        res.status(500).json({ othelloDatabaseError: 'gameUpdateError' });
-      }
-    })
-    .catch((err) => {
-      console.log("Caught error: " + err);
-      if (err.message.startsWith('othello')) {
-        res.status(400).json({ othelloMoveError: err.message }); 
-      } else {
-        res.status(404).json({ othelloDatabaseError: 'noSuchGame' }); 
-      }
-    })
+  .then(othelloGameBefore => {
+    return applyMove(othelloGameBefore, req.username, req.body.x, req.body.y);
+  })
+  .then(othelloGameAfter => {
+    game = othelloGameAfter;
+    return Othello.updateOne({_id: id}, {'$set': othelloGameAfter});
+  })
+  .then((updateOneResult) => {
+    if (updateOneResult.modifiedCount === 1) {
+      // Ping the opposing player that a move has been made
+      const opponame = game.players[0] === req.username ? game.players[1] : game.players[0];
+      sendMessageToUser(opponame, {type: wsMsgTypes.GAME_UPDATED});
+      res.json(game);
+    } else {
+      res.status(500).json({ othelloDatabaseError: 'gameUpdateError' });
+    }
+  })
+  .catch((err) => {
+    console.log("Caught error: " + err);
+    if (err.message.startsWith('othello')) {
+      res.status(400).json({ othelloMoveError: err.message });
+    } else {
+      res.status(404).json({ othelloDatabaseError: 'noSuchGame' });
+    }
+  })
 });
 
 // @route POST /api/games/othello
@@ -72,19 +82,19 @@ router.post('/:id/move', (req, res) => {
 router.post('/', (req, res) => {
 
   // req.body = {
-  //   opponent: opponent,
+  //   opponent: opponame,
   //   usercolor: 'B'
   // };
 
   const username = req.username;
-  const opponent = sanitize(req.body.opponent); // Trying to sanitize this in the client is pointless.
+  const opponame = sanitize(req.body.opponent);
   const usercolor = req.body.usercolor == 'B' || req.body.usercolor == 'W' ? req.body.usercolor : 'B';
   const oppocolor = req.body.usercolor == 'B' ? 'W' : 'B';
-  const next = usercolor === 'B' ? username : opponent;
+  const next = usercolor === 'B' ? username : opponame;
 
   const game = {
     created: new Date(),
-    players: [username, opponent],
+    players: [username, opponame],
     colors: [usercolor, oppocolor],
     gameState: [
       ['E', 'E', 'E', 'E', 'E', 'E', 'E', 'E',],
@@ -104,6 +114,8 @@ router.post('/', (req, res) => {
   Othello.create(game)
     .then((othelloGame) => {
       console.log("newGame = " + othelloGame);
+      // Ping the opposing player that a new game has been created.
+      sendMessageToUser(opponame, {type: wsMsgTypes.NEW_GAME});
       res.json({
         msg: 'Othello game added successfully',
         id: othelloGame._id
@@ -147,11 +159,11 @@ router.delete('/:id', (req, res) => {
 
 function applyMove(game, username, x, y) {
 
-  var promise = new Promise( (resolve, reject) => {
+  var promise = new Promise((resolve, reject) => {
 
-    if (game == null) {
+    if (game == null || username == null) {
       reject(new Error('databaseError'));
-      return;
+      return null;
     }
 
     // Note that username is recovered / validated using the authorization server
@@ -166,7 +178,7 @@ function applyMove(game, username, x, y) {
     const result = legalMove(game, username, usercolor, x, y, true);
     if (result !== '') {
       reject(new Error(result));
-      return;
+      return null;
     }
 
     // Let's make history!
@@ -205,9 +217,6 @@ function applyMove(game, username, x, y) {
         }
       }
     }
-
-    // Ping the opposing player that a move has been made
-    sendMessageToUser(opponame, {type: typesDef.GAME_UPDATE});
 
     console.log("Othello.js: applyMove: Move accepted.");
     resolve(game);

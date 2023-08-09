@@ -1,8 +1,12 @@
-const express = require('express');
-const { broadcastMessage, typesDef } = require('../../WebSocketServer.js');
-const Roster = require('../../models/Roster');
+//-----------------------------------------------------------------------------
+// Copyright 2023 Chris Cooksey
+//-----------------------------------------------------------------------------
 
-var mutex = require('./Mutex');
+const express = require('express');
+const { broadcastMessage, updatePresenceForUser } = require('../../WebSocketServer');
+const { wsMsgTypes, astring, duh } = require('../../bsi_protocol');
+const Roster = require('../../models/Roster');
+const mutex = require('./Mutex');
 
 const router = express.Router();
 
@@ -61,11 +65,15 @@ router.delete('/', (req, res) => {
 // Username comes from oauth server via authenticate middleware
 router.post('/presence', (req, res) => {
 
-  // Ping all players, via the websocket, that a user's online status has changed (including oneself!)
+  // Ping all players, via the websocket, that a user's online status has changed
+  // (including oneself!)
   broadcastMessage({
-    type: req.body.presence ? typesDef.PLAYER_ONLINE : typesDef.PLAYER_OFFLINE,
+    type: req.body.presence ? wsMsgTypes.PLAYER_ONLINE : wsMsgTypes.PLAYER_OFFLINE,
     player: req.username
   });
+
+  // Ping the new user with the online status of everyone else.
+  updatePresenceForUser(req.username);
 
   res.status(200).json({msg: 'Presence for ' + req.username + 'posted to websocket'})
 })
