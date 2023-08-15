@@ -26,10 +26,18 @@ const router = express.Router();
 function authenticate(req, res, next) {
 
   const authorization = req?.headers?.authorization;
+
   if (authorization == null) {
-    console.log("Authenticate.js: authorization header missing");
+    console.log("Authenticate.js:authenticate: authorization header missing");
+    try {
+      console.log("Authenticate.js:authenticate: Headers = " + JSON.stringify(req?.headers));
+      console.log("Authenticate.js:authenticate: Body = " + JSON.stringify(req?.body));
+    }
+    catch {
+    };
     return res.status(401).json({ authorizationError: 'noToken' });
   }
+
   const token = authorization.substring(authorization.indexOf(" ") + 1);
 
   const ou_oauth2 = `${process.env.OU_OAUTH2_SERVER_URL}:${process.env.OU_OAUTH2_SERVER_PORT}`;
@@ -46,7 +54,7 @@ function authenticate(req, res, next) {
   })
   .catch((err) => {
     // This is reached with 401 error if token is not valid
-    console.log("Authenticate.js: failure ", err);
+    console.log("Authenticate.js:failure ", err);
     return res.status(401).json({ authorizationError: 'unauthorized' })
   });
 }

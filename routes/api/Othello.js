@@ -5,7 +5,7 @@
 const express = require('express');
 const mongoose = require('mongoose');
 const sanitize = require('mongo-sanitize');
-const { sendMessageToUser } = require('../../WebSocketServer');
+const { sendMessageToUser, updateGameActivity } = require('../../WebSocketServer');
 const { wsMsgTypes } = require('../../bsi_protocol');
 const Othello = require('../../models/Othello');
 
@@ -23,17 +23,35 @@ router.get('/', (req, res) => {
   // Add the username to the query
   const query = {...req.query, players: req.username};
   Othello.find(query)
-    .then(othelloGames => res.json(othelloGames))
-    .catch(err => res.status(404).json({ othelloDatabaseError: 'noGames' }));   
+    .then(games => res.json(games))
+    .catch(err => {
+      console.log('Othello.js:GET /api/games/othello: caught error ' + err);
+      res.status(404).json({ othelloDatabaseError: 'noGames' })
+    });
 });
 
 // @route GET /api/games/othello/:id
 // @description Get single Othello game by id
 // @access Public
+// Note that, as with all these calls, the interceptor has filled out the username.
+// We use this to let the opponent know the last game the user loaded.
 router.get('/:id', (req, res) => {
+  console.log('Othello.js:GET /api/games/othello/:id: getting game id ' + req.params.id);
   Othello.findById(new mongoose.Types.ObjectId(req.params.id))
-    .then(othelloGame => res.json(othelloGame))
-    .catch(err => res.status(404).json({ othelloDatabaseError: 'noSuchGame' }));
+    .then(game => {
+      const opponame = game?.players[0] === req.username ? game.players[1] : game.players[0];
+
+      //  It's important to call this whether the opponent is online or not. We are caching
+      // the message for when they do join (as long as this player stays online).
+      updateGameActivity(req.username, opponame, true, req.params.id);
+
+      console.log('Othello.js:GET /api/games/othello/:id: returning game id ' + req.params.id);
+      res.json(game);
+    })
+    .catch(err => {
+      console.log('Othello.js:GET /api/games/othello/:id: caught error ' + err);
+      res.status(404).json({ othelloDatabaseError: 'noSuchGame' })
+    });
 });
 
 // @route POST /api/games/othello/:id
@@ -60,14 +78,14 @@ router.post('/:id/move', (req, res) => {
     if (updateOneResult.modifiedCount === 1) {
       // Ping the opposing player that a move has been made
       const opponame = game.players[0] === req.username ? game.players[1] : game.players[0];
-      sendMessageToUser(opponame, {type: wsMsgTypes.GAME_UPDATED});
+      sendMessageToUser(opponame, req.username, {type: wsMsgTypes.GAME_UPDATED});
       res.json(game);
     } else {
       res.status(500).json({ othelloDatabaseError: 'gameUpdateError' });
     }
   })
   .catch((err) => {
-    console.log("Caught error: " + err);
+    console.log('Othello.js:POST /api/games/othello/:id: caught error ' + err);
     if (err.message.startsWith('othello')) {
       res.status(400).json({ othelloMoveError: err.message });
     } else {
@@ -113,24 +131,30 @@ router.post('/', (req, res) => {
 
   Othello.create(game)
     .then((othelloGame) => {
-      console.log("newGame = " + othelloGame);
+      console.log("Othello.js:POST /api/games/othello: newGame = " + othelloGame);
       // Ping the opposing player that a new game has been created.
-      sendMessageToUser(opponame, {type: wsMsgTypes.NEW_GAME});
+      sendMessageToUser(opponame, req.username, {type: wsMsgTypes.GAME_CREATED, player: req.username});
       res.json({
         msg: 'Othello game added successfully',
         id: othelloGame._id
       })
     })
-    .catch(err => res.status(400).json({ othelloDatabaseError: 'unableToCreateGame' }));
+    .catch(err => {
+      console.log('Othello.js:POST /api/games/othello: caught error ' + err);
+      res.status(400).json({ othelloDatabaseError: 'unableToCreateGame' });
+    });
 });
 
 // @route DELETE /api/games/othello/:id
-// @description Delete book by id
+// @description Delete game by id
 // @access Public
 router.delete('/:id', (req, res) => {
   Othello.findByIdAndRemove(req.params.id, req.body)
-    .then(othelloGame => res.json({ msg: 'Othello game deleted successfully' }))
-    .catch(err => res.status(404).json({ othelloDatabaseError: 'noSuchGame' }));
+    .then(() => res.json({ msg: 'Othello game deleted successfully' }))
+    .catch(err => {
+      console.log('Othello.js:DELETE /api/games/othello/:id: caught error ' + err);
+      res.status(404).json({ othelloDatabaseError: 'noSuchGame' });
+    });
 });
 
 // New file? Doesn't implement a route, does not need the db
@@ -218,7 +242,7 @@ function applyMove(game, username, x, y) {
       }
     }
 
-    console.log("Othello.js: applyMove: Move accepted.");
+    console.log("Othello.js:applyMove: Move accepted.");
     resolve(game);
   });
 

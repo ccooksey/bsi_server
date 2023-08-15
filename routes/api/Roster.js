@@ -3,8 +3,7 @@
 //-----------------------------------------------------------------------------
 
 const express = require('express');
-const { broadcastMessage, updatePresenceForUser } = require('../../WebSocketServer');
-const { wsMsgTypes, astring, duh } = require('../../bsi_protocol');
+const { updatePresenceForUser, handleDisconnectUser } = require('../../WebSocketServer');
 const Roster = require('../../models/Roster');
 const mutex = require('./Mutex');
 
@@ -36,8 +35,6 @@ router.post('/', (req, res) => {
         console.log('Roster.js:post: User "' + req.username + '" added to database');
         res.status(200).json({msg: 'User added to database'})
       } else {
-        // Not a bad request!
-        // res.status(400).json({error: 'User already in database'})
         res.status(200).json({msg: 'User already in database'})
       }
     } catch (err) {
@@ -65,15 +62,12 @@ router.delete('/', (req, res) => {
 // Username comes from oauth server via authenticate middleware
 router.post('/presence', (req, res) => {
 
-  // Ping all players, via the websocket, that a user's online status has changed
-  // (including oneself!)
-  broadcastMessage({
-    type: req.body.presence ? wsMsgTypes.PLAYER_ONLINE : wsMsgTypes.PLAYER_OFFLINE,
-    player: req.username
-  });
-
-  // Ping the new user with the online status of everyone else.
-  updatePresenceForUser(req.username);
+  // Activate or deactivate the user as approriate
+  if (req.body.presence) {
+    updatePresenceForUser(req.username, true);
+  } else {
+    handleDisconnectUser(req.username);
+  }
 
   res.status(200).json({msg: 'Presence for ' + req.username + 'posted to websocket'})
 })
